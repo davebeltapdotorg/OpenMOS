@@ -9,6 +9,8 @@ OpenMOS is a small Media Object Server implementation with one MOS message core 
 
 Both transports process `roCreate` through the same service and send `roAck` only after storage succeeds. A retry with the same message ID replays the original response without applying the operation again. The in-memory retry record is bounded and does not survive a process restart. Nested `mosExternalMetadata` is stored as opaque XML with its scope and schema. MOS 2.x TCP also answers `roReqAll` with `roListAll` summaries.
 
+For `roCreate`, flat and `mosItem`-wrapped item fields are accepted on input. Item storage keeps plain-text `mosAbstract`, distinct editorial and object sample durations, and the exact `objTB` rate, plus distinct essence, proxy, and metadata paths from `objPaths`. Local tests cover decoding and storage; rich abstract markup and live peer interoperability for these fields are unverified.
+
 Profile 0 handles `keepAlive` (no reply), `heartbeat` (correlated reply with reflection protection), `reqMachInfo`, and `listMachInfo`. Machine info advertises Profile 0 only. Other profiles are not claimed. Local tests verify protocol framing and message handling; they do not establish interoperability with a live NCS.
 
 ## Run

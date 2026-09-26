@@ -203,22 +203,34 @@ func (s *MOSService) storeItems(ctx context.Context, storyID string, infos []xml
 			RawID:            info.ID,
 			StoryID:          storyID,
 			Slug:             info.Slug,
+			Abstract:         strings.TrimSpace(info.Abstract),
 			ObjectID:         info.ObjectID,
+			Media:            mediaPathsFrom(info.ObjPaths, info.ObjPath),
 			Status:           model.StatusPending,
 			Order:            order + 1,
 			CreatedAt:        time.Now(),
 			UpdatedAt:        time.Now(),
 			ExternalMetadata: preserveExternalMetadata(info.MosExternalMetadata),
 		}
-		if info.Duration != "" {
-			// MOS itemEdDur is samples; Item.Duration is seconds.
-			item.EditorialDuration, _ = strconv.Atoi(info.Duration)
+		item.Metadata = make(map[string]string)
+		editorial, haveEditorial := parseSamples(info.Duration)
+		if haveEditorial {
+			item.EditorialDuration = editorial
+			item.Metadata["itemEdDur"] = strings.TrimSpace(info.Duration)
+		}
+		object, haveObject := parseSamples(info.ObjDur)
+		if haveObject {
+			item.ObjectDuration = object
+		}
+		_, _, seconds, timeBase, haveRate := resolveItemTiming(info.Duration, info.ObjDur, info.ObjTB)
+		if haveRate {
+			item.Duration, item.TimeBase = seconds, timeBase
+		}
+		if rate := strings.TrimSpace(info.ObjTB); rate != "" {
+			item.Metadata["objTB"] = rate
 		}
 		// Keep the object's MOS identity separate from the receiving MOS identity.
 		if info.MosID != "" {
-			if item.Metadata == nil {
-				item.Metadata = make(map[string]string, 1)
-			}
 			item.Metadata["mosID"] = info.MosID
 		}
 
@@ -232,17 +244,46 @@ func (s *MOSService) storeItems(ctx context.Context, storyID string, infos []xml
 		existing.StoryID = item.StoryID
 		existing.RawID = item.RawID
 		existing.Slug = item.Slug
+		if item.Abstract != "" {
+			existing.Abstract = item.Abstract
+		}
 		existing.ObjectID = item.ObjectID
-		if info.Duration != "" {
-			existing.EditorialDuration = item.EditorialDuration
+		if haveEditorial {
+			existing.EditorialDuration = editorial
+		}
+		if haveObject {
+			existing.ObjectDuration = object
+		}
+		if item.Media != nil {
+			existing.Media = item.Media
 		}
 		existing.Order = item.Order
-		existing.ExternalMetadata = item.ExternalMetadata
-		if info.MosID != "" {
+		if len(item.ExternalMetadata) > 0 {
+			existing.ExternalMetadata = item.ExternalMetadata
+		}
+		if len(item.Metadata) > 0 {
 			if existing.Metadata == nil {
-				existing.Metadata = make(map[string]string, 1)
+				existing.Metadata = make(map[string]string, len(item.Metadata))
 			}
-			existing.Metadata["mosID"] = info.MosID
+			for key, value := range item.Metadata {
+				existing.Metadata[key] = value
+			}
+		}
+		if haveEditorial || haveObject || strings.TrimSpace(info.ObjTB) != "" {
+			editorialRaw := existing.Metadata["itemEdDur"]
+			if editorialRaw == "" && existing.EditorialDuration > 0 {
+				editorialRaw = strconv.Itoa(existing.EditorialDuration)
+			}
+			objectRaw := ""
+			if existing.ObjectDuration > 0 || haveObject {
+				objectRaw = strconv.Itoa(existing.ObjectDuration)
+			}
+			_, _, seconds, timeBase, haveRate = resolveItemTiming(editorialRaw, objectRaw, existing.Metadata["objTB"])
+			if haveRate {
+				existing.Duration, existing.TimeBase = seconds, timeBase
+			} else {
+				existing.Duration, existing.TimeBase = 0, 0
+			}
 		}
 		if err := s.itemRepo.Update(ctx, existing); err != nil {
 			return fmt.Errorf("failed to update item %s: %w", info.ID, err)

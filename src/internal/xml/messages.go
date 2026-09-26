@@ -273,12 +273,32 @@ type StoryInfo struct {
 type ItemInfo struct {
 	ID                  string                `xml:"itemID"`
 	Slug                string                `xml:"itemSlug,omitempty"`
+	Abstract            string                `xml:"-"` // Decoded on input; outbound item fields need a separate ordering audit.
 	Duration            string                `xml:"itemEdDur,omitempty"`
+	ObjDur              string                `xml:"-"` // Inbound compatibility; object timing is not an item output field.
+	ObjTB               string                `xml:"-"`
 	ObjectID            string                `xml:"objID"`
 	MosID               string                `xml:"mosID"`
 	ObjPath             string                `xml:"objPath,omitempty"`
+	ObjPaths            *ObjPaths             `xml:"-"`
 	Channel             string                `xml:"itemChannel,omitempty"`
 	MosExternalMetadata []MosExternalMetadata `xml:"mosExternalMetadata,omitempty"`
+}
+
+// ObjPaths keeps each path role and repeated entry distinct.
+type ObjPaths struct {
+	Essence  []ObjPath `xml:"objPath,omitempty"`
+	Proxy    []ObjPath `xml:"objProxyPath,omitempty"`
+	Metadata []ObjPath `xml:"objMetadataPath,omitempty"`
+}
+
+type ObjPath struct {
+	TechDescription string `xml:"techDescription,attr,omitempty"`
+	Value           string `xml:",chardata"`
+}
+
+func (p *ObjPaths) Empty() bool {
+	return p == nil || len(p.Essence)+len(p.Proxy)+len(p.Metadata) == 0
 }
 
 // GetMessageType returns the type of the message
