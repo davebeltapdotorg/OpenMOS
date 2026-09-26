@@ -33,16 +33,31 @@ type Item struct {
 	RawID             string             `bson:"rawID" json:"rawID"`                           // Original itemID from MOS
 	ObjectID          string             `bson:"objectID,omitempty" json:"objectID,omitempty"` // Reference to MOS Object
 	Slug              string             `bson:"slug" json:"slug"`
+	Abstract          string             `bson:"abstract,omitempty" json:"abstract,omitempty"`
 	Duration          int                `bson:"duration" json:"duration"` // Duration in seconds
 	EditorialDuration int                `bson:"editorialDuration,omitempty" json:"editorialDuration,omitempty"`
+	ObjectDuration    int                `bson:"objectDuration,omitempty" json:"objectDuration,omitempty"`
 	TimeBase          int                `bson:"timeBase,omitempty" json:"timeBase,omitempty"`
 	Status            StatusType         `bson:"status" json:"status"`
 	Order             int                `bson:"order" json:"order"`     // Order within the story
 	StoryID           string             `bson:"storyID" json:"storyID"` // Parent story ID
 	Metadata          map[string]string  `bson:"metadata,omitempty" json:"metadata,omitempty"`
+	Media             *MediaPaths        `bson:"media,omitempty" json:"media,omitempty"`
 	ExternalMetadata  []ExternalMetadata `bson:"externalMetadata,omitempty" json:"externalMetadata,omitempty"`
 	CreatedAt         time.Time          `bson:"createdAt" json:"createdAt"`
 	UpdatedAt         time.Time          `bson:"updatedAt" json:"updatedAt"`
+}
+
+// MediaPaths stores item pointers without conflating essence, proxy, and metadata roles.
+type MediaPaths struct {
+	Essence  []MediaPath `bson:"essence,omitempty" json:"essence,omitempty"`
+	Proxy    []MediaPath `bson:"proxy,omitempty" json:"proxy,omitempty"`
+	Metadata []MediaPath `bson:"metadata,omitempty" json:"metadata,omitempty"`
+}
+
+type MediaPath struct {
+	URL             string `bson:"url" json:"url"`
+	TechDescription string `bson:"techDescription,omitempty" json:"techDescription,omitempty"`
 }
 
 // Story represents a story in the running order (collection of items)

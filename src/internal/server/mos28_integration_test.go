@@ -95,6 +95,65 @@ func TestMOS28ROCreatePersistsAndAcknowledgesOnSameSocket(t *testing.T) {
 	}
 }
 
+func TestMOS28ROCreatePreservesNestedItemFieldsAndRateUpdates(t *testing.T) {
+	tcpServer, _, _, items := startMOS28Server(t)
+	conn := dialMOS28(t, tcpServer)
+	send := func(messageID, itemXML string) {
+		t.Helper()
+		request := `<mos><mosID>openmos.example.test</mosID><ncsID>example.test</ncsID><messageID>` + messageID + `</messageID><roCreate><roID>RO-ITEM</roID><roSlug>Order</roSlug><story><storyID>STORY</storyID><storySlug>Story</storySlug><item>` + itemXML + `</item></story></roCreate></mos>`
+		writeMOS28ForTest(t, conn, request)
+		var ack struct {
+			MessageID string `xml:"messageID"`
+			ROAck     struct {
+				Status string `xml:"roStatus"`
+			} `xml:"roAck"`
+		}
+		readMOS28XMLForTest(t, conn, &ack)
+		if ack.MessageID != messageID || ack.ROAck.Status != "OK" {
+			t.Fatalf("unexpected acknowledgement: %+v", ack)
+		}
+	}
+
+	send("101", `<mosItem><itemID>ITEM</itemID><itemSlug>Short slug</itemSlug><mosAbstract>Complete abstract</mosAbstract><objID>OBJECT</objID><mosID>openmos.example.test</mosID><itemEdDur>150</itemEdDur><objDur>300</objDur><objTB>50</objTB><objPaths><objPath techDescription="master">https://example.test/essence</objPath><objProxyPath>https://example.test/proxy</objProxyPath><objMetadataPath>https://example.test/metadata</objMetadataPath></objPaths><mosExternalMetadata><mosSchema>urn:example:item</mosSchema><mosPayload><value>opaque</value></mosPayload></mosExternalMetadata></mosItem>`)
+	item := items.value("RO-ITEM/STORY/ITEM")
+	if item == nil || item.Abstract != "Complete abstract" || item.EditorialDuration != 150 || item.ObjectDuration != 300 || item.Duration != 3 || item.TimeBase != 50 || item.Metadata["objTB"] != "50" {
+		t.Fatalf("item fields were not stored: %+v", item)
+	}
+	if item.Media == nil || len(item.Media.Essence) != 1 || len(item.Media.Proxy) != 1 || len(item.Media.Metadata) != 1 || item.Media.Essence[0].TechDescription != "master" {
+		t.Fatalf("structured paths were not stored: %+v", item.Media)
+	}
+	if len(item.ExternalMetadata) != 1 || item.ExternalMetadata[0].Payload != `<value>opaque</value>` {
+		t.Fatalf("opaque metadata was not stored: %+v", item.ExternalMetadata)
+	}
+
+	send("102", `<itemID>ITEM</itemID><itemSlug>Updated slug</itemSlug><objID>OBJECT</objID><mosID>openmos.example.test</mosID><itemEdDur>120</itemEdDur><objTB>59.94</objTB>`)
+	item = items.value("RO-ITEM/STORY/ITEM")
+	if item == nil || item.Abstract != "Complete abstract" || item.Slug != "Updated slug" || item.EditorialDuration != 120 || item.ObjectDuration != 300 || item.Duration != 2 || item.TimeBase != 60 || item.Metadata["objTB"] != "59.94" {
+		t.Fatalf("updated item lost fields or retained a stale rate: %+v", item)
+	}
+	if item.Media == nil || len(item.Media.Essence) != 1 || len(item.ExternalMetadata) != 1 {
+		t.Fatalf("omitted paths or metadata erased stored values: %+v", item)
+	}
+
+	send("103", `<itemID>OBJECT-ONLY</itemID><mosAbstract>Separate abstract</mosAbstract><objID>OBJECT</objID><mosID>openmos.example.test</mosID><objDur>0X96</objDur><objTB>50</objTB>`)
+	item = items.value("RO-ITEM/STORY/OBJECT-ONLY")
+	if item == nil || item.Slug != "" || item.Abstract != "Separate abstract" || item.EditorialDuration != 0 || item.ObjectDuration != 150 || item.Duration != 3 {
+		t.Fatalf("object duration was lost or treated as editorial duration: %+v", item)
+	}
+	send("104", `<itemID>OBJECT-ONLY</itemID><objID>OBJECT</objID><mosID>openmos.example.test</mosID><objTB>75</objTB>`)
+	item = items.value("RO-ITEM/STORY/OBJECT-ONLY")
+	if item == nil || item.EditorialDuration != 0 || item.ObjectDuration != 150 || item.Duration != 2 || item.TimeBase != 75 {
+		t.Fatalf("object duration was not recalculated at the new rate: %+v", item)
+	}
+
+	send("105", `<itemID>OBJECT-ONLY</itemID><objID>OBJECT</objID><mosID>openmos.example.test</mosID><itemEdDur>0</itemEdDur>`)
+	send("106", `<itemID>OBJECT-ONLY</itemID><objID>OBJECT</objID><mosID>openmos.example.test</mosID><objTB>50</objTB>`)
+	item = items.value("RO-ITEM/STORY/OBJECT-ONLY")
+	if item == nil || item.EditorialDuration != 0 || item.ObjectDuration != 150 || item.Duration != 0 || item.TimeBase != 50 {
+		t.Fatalf("zero editorial duration did not override object duration: %+v", item)
+	}
+}
+
 func TestMOS28AcceptsSplitUCS2BEAndRepliesUCS2BE(t *testing.T) {
 	tcpServer, runningOrders, _, _ := startMOS28Server(t)
 	conn := dialMOS28(t, tcpServer)
